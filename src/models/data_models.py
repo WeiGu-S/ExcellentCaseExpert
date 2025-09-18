@@ -32,9 +32,8 @@ class ExportFormat(Enum):
 
 
 class LLMProvider(Enum):
-    """LLM provider types."""
+    """LLM provider types - 统一使用 OpenAI 兼容接口"""
     OPENAI = "openai"
-    CLAUDE = "claude"
 
 
 @dataclass

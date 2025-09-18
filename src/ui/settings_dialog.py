@@ -116,16 +116,9 @@ class SettingsDialog(QDialog):
         self.openai_base_url.setPlaceholderText("https://api.openai.com/v1")
         openai_layout.addRow("基础URL:", self.openai_base_url)
         
-        # 模型
-        self.openai_model = QComboBox()
-        self.openai_model.addItems([
-            "gpt-4o",
-            "gpt-4o-mini", 
-            "gpt-4-turbo",
-            "gpt-4",
-            "gpt-3.5-turbo"
-        ])
-        self.openai_model.setEditable(True)
+        # 模型 - 改为文本输入框，由用户自行输入
+        self.openai_model = QLineEdit()
+        self.openai_model.setPlaceholderText("输入模型名称，如：gpt-4o-mini")
         openai_layout.addRow("模型:", self.openai_model)
         
         # 超时设置
@@ -136,47 +129,19 @@ class SettingsDialog(QDialog):
         
         layout.addWidget(openai_group)
         
-        # Claude配置组
-        claude_group = QGroupBox("Claude配置")
-        claude_layout = QFormLayout(claude_group)
-        
-        # API密钥 - 直接显示，不加密
-        self.claude_api_key = QLineEdit()
-        self.claude_api_key.setPlaceholderText("输入Claude API密钥")
-        claude_layout.addRow("API密钥:", self.claude_api_key)
-        
-        # 基础URL
-        self.claude_base_url = QLineEdit()
-        self.claude_base_url.setPlaceholderText("https://api.anthropic.com")
-        claude_layout.addRow("基础URL:", self.claude_base_url)
-        
-        # 模型
-        self.claude_model = QComboBox()
-        self.claude_model.addItems([
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307"
-        ])
-        self.claude_model.setEditable(True)
-        claude_layout.addRow("模型:", self.claude_model)
-        
-        # 超时设置
-        self.claude_timeout = QSpinBox()
-        self.claude_timeout.setRange(10, 300)
-        self.claude_timeout.setSuffix(" 秒")
-        claude_layout.addRow("超时时间:", self.claude_timeout)
-        
-        layout.addWidget(claude_group)
+        # 由于配置已统一为 OpenAI 兼容接口，Claude 配置已合并到上方的 OpenAI 配置中
+        # 保留这些控件以维持兼容性，但它们将映射到统一的配置
+        self.claude_api_key = self.openai_api_key  # 引用同一个控件
+        self.claude_base_url = self.openai_base_url  # 引用同一个控件
+        self.claude_model = self.openai_model  # 引用同一个控件
+        self.claude_timeout = self.openai_timeout  # 引用同一个控件
         
         # 默认提供商
         default_group = QGroupBox("默认设置")
         default_layout = QFormLayout(default_group)
         
         self.default_provider = QComboBox()
-        self.default_provider.addItem("OpenAI", LLMProvider.OPENAI.value)
-        self.default_provider.addItem("Claude", LLMProvider.CLAUDE.value)
+        self.default_provider.addItem("OpenAI 兼容", LLMProvider.OPENAI.value)
         default_layout.addRow("默认提供商:", self.default_provider)
         
         layout.addWidget(default_group)
@@ -184,13 +149,9 @@ class SettingsDialog(QDialog):
         # 测试连接按钮
         test_layout = QHBoxLayout()
         
-        self.test_openai_btn = QPushButton("测试OpenAI连接")
+        self.test_openai_btn = QPushButton("测试LLM连接")
         self.test_openai_btn.clicked.connect(self._test_openai_connection)
         test_layout.addWidget(self.test_openai_btn)
-        
-        self.test_claude_btn = QPushButton("测试Claude连接")
-        self.test_claude_btn.clicked.connect(self._test_claude_connection)
-        test_layout.addWidget(self.test_claude_btn)
         
         layout.addLayout(test_layout)
         
@@ -470,12 +431,12 @@ class SettingsDialog(QDialog):
         # API配置
         self.openai_api_key.setText(self.config.openai_api_key or "")
         self.openai_base_url.setText(self.config.openai_base_url or "")
-        self.openai_model.setCurrentText(self.config.openai_model or "gpt-4o-mini")
+        self.openai_model.setText(self.config.openai_model or "gpt-4o-mini")
         self.openai_timeout.setValue(self.config.openai_timeout or 60)
         
         self.claude_api_key.setText(self.config.claude_api_key or "")
         self.claude_base_url.setText(self.config.claude_base_url or "")
-        self.claude_model.setCurrentText(self.config.claude_model or "claude-3-5-sonnet-20241022")
+        self.claude_model.setText(self.config.claude_model or "gpt-4o-mini")
         self.claude_timeout.setValue(self.config.claude_timeout or 60)
         
         # 设置默认提供商
@@ -534,17 +495,12 @@ class SettingsDialog(QDialog):
             if not self._validate_settings(settings):
                 return False
             
-            # 保存到配置管理器
-            self.config.update_llm_config(
-                openai_api_key=settings['openai_api_key'],
-                openai_base_url=settings['openai_base_url'],
-                openai_model=settings['openai_model'],
-                openai_timeout=settings['openai_timeout'],
-                claude_api_key=settings['claude_api_key'],
-                claude_base_url=settings['claude_base_url'],
-                claude_model=settings['claude_model'],
-                claude_timeout=settings['claude_timeout'],
-                default_provider=LLMProvider(settings['default_provider'])
+            # 保存到配置管理器 - 使用统一的 LLM 配置
+            self.config.set_llm_config(
+                api_endpoint=settings['openai_base_url'],
+                api_key=settings['openai_api_key'],
+                model=settings['openai_model'],
+                timeout=settings['openai_timeout']
             )
             
             self.config.update_ocr_config(
@@ -589,11 +545,11 @@ class SettingsDialog(QDialog):
             # API配置
             'openai_api_key': self.openai_api_key.text().strip(),
             'openai_base_url': self.openai_base_url.text().strip(),
-            'openai_model': self.openai_model.currentText().strip(),
+            'openai_model': self.openai_model.text().strip(),
             'openai_timeout': self.openai_timeout.value(),
             'claude_api_key': self.claude_api_key.text().strip(),
             'claude_base_url': self.claude_base_url.text().strip(),
-            'claude_model': self.claude_model.currentText().strip(),
+            'claude_model': self.claude_model.text().strip(),
             'claude_timeout': self.claude_timeout.value(),
             'default_provider': self.default_provider.currentData(),
             
@@ -688,16 +644,7 @@ class SettingsDialog(QDialog):
         # 这里应该实际测试连接，暂时显示提示
         QMessageBox.information(self, "测试连接", "OpenAI连接测试功能待实现")
     
-    def _test_claude_connection(self):
-        """测试Claude连接"""
-        api_key = self.claude_api_key.text().strip()
-        if not api_key:
-            QMessageBox.warning(self, "测试失败", "请先输入Claude API密钥")
-            return
-        
-        # 这里应该实际测试连接，暂时显示提示
-        QMessageBox.information(self, "测试连接", "Claude连接测试功能待实现")
-    
+
     def _browse_tesseract_path(self):
         """浏览Tesseract路径"""
         file_path, _ = QFileDialog.getOpenFileName(

@@ -19,10 +19,8 @@ from ...utils.error_handler import ErrorHandler
 
 
 class LLMProvider(Enum):
-    """支持的大模型提供商"""
+    """支持的大模型提供商 - 统一使用 OpenAI 兼容接口"""
     OPENAI = "openai"
-    CLAUDE = "claude"
-    CUSTOM = "custom"
 
 
 class LLMService(ILLMService):
@@ -40,94 +38,47 @@ class LLMService(ILLMService):
         
         # 从配置文件加载配置，如果没有配置管理器则使用默认值
         if self.config_manager:
-            self.timeout = self.config_manager.get_config('llm.timeout', LLM_TIMEOUT)
-            self.max_retries = self.config_manager.get_config('llm.max_retries', LLM_MAX_RETRIES)
-            self.retry_interval = self.config_manager.get_config('llm.retry_interval', LLM_RETRY_INTERVAL)
-            self.default_service = self.config_manager.get_config('llm.default_service', 'openai')
+            self.timeout = self.config_manager.get_config('llm.timeout', 60)
+            self.max_retries = self.config_manager.get_config('llm.max_retries', 3)
+            self.retry_interval = self.config_manager.get_config('llm.retry_interval', 2.0)
             self.temperature = self.config_manager.get_config('llm.temperature', 0.7)
             self.max_tokens = self.config_manager.get_config('llm.max_tokens', 2000)
+            self.api_endpoint = self.config_manager.get_config('llm.api_endpoint', 'https://api.openai.com/v1/chat/completions')
+            self.api_key = self.config_manager.get_config('llm.api_key', '')
+            self.model = self.config_manager.get_config('llm.model', 'gpt-4o-mini')
         else:
-            self.timeout = LLM_TIMEOUT
-            self.max_retries = LLM_MAX_RETRIES
-            self.retry_interval = LLM_RETRY_INTERVAL
-            self.default_service = 'openai'
+            self.timeout = 60
+            self.max_retries = 3
+            self.retry_interval = 2.0
             self.temperature = 0.7
             self.max_tokens = 2000
+            self.api_endpoint = 'https://api.openai.com/v1/chat/completions'
+            self.api_key = ''
+            self.model = 'gpt-4o-mini'
         
         # 请求会话
         self.session = requests.Session()
         self.session.timeout = self.timeout
     
-    def _get_provider_config(self, provider: str) -> Dict[str, Any]:
-        """
-        获取提供商配置
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            提供商配置字典
-        """
-        if self.config_manager:
-            return self.config_manager.get_config(f'llm.providers.{provider}', {})
-        return {}
+    def _get_api_endpoint(self) -> str:
+        """获取API端点"""
+        return self.api_endpoint
     
-    def _get_api_endpoint(self, provider: str) -> str:
-        """
-        获取API端点
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            API端点URL
-        """
-        provider_config = self._get_provider_config(provider)
-        return provider_config.get('api_endpoint', '')
+    def _get_default_model(self) -> str:
+        """获取默认模型"""
+        return self.model
     
-    def _get_default_model(self, provider: str) -> str:
-        """
-        获取默认模型
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            默认模型名称
-        """
-        provider_config = self._get_provider_config(provider)
-        return provider_config.get('default_model', 'unknown')
+    def _get_available_models(self) -> List[str]:
+        """获取可用模型列表（由于模型由用户输入，返回当前配置的模型）"""
+        return [self.model] if self.model else []
     
-    def _get_available_models(self, provider: str) -> List[str]:
-        """
-        获取可用模型列表
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            模型列表
-        """
-        provider_config = self._get_provider_config(provider)
-        return provider_config.get('models', [])
+    def _get_api_key(self) -> str:
+        """获取API密钥"""
+        return self.api_key
     
-    def _get_api_key(self, provider: LLMProvider) -> str:
+    def _prepare_request(self, prompt: str, model: str, **kwargs) -> Dict[str, Any]:
         """
-        获取API密钥
-        
-        Args:
-            provider: 大模型提供商
-            
-        Returns:
-            API密钥
-        """
-        if self.config_manager:
-            return self.config_manager.get_api_key(provider.value)
-        return ""
-    
-    def _prepare_openai_request(self, prompt: str, model: str, **kwargs) -> Dict[str, Any]:
-        """
-        准备OpenAI API请求
+        准备 OpenAI 兼容 API 请求
         
         Args:
             prompt: 提示词
@@ -137,9 +88,9 @@ class LLMService(ILLMService):
         Returns:
             请求数据
         """
-        default_model = model or self._get_default_model('openai')
+        used_model = model or self._get_default_model()
         return {
-            "model": default_model,
+            "model": used_model,
             "messages": [
                 {
                     "role": "user",
@@ -153,64 +104,23 @@ class LLMService(ILLMService):
             "presence_penalty": kwargs.get("presence_penalty", 0.0)
         }
     
-    def _prepare_claude_request(self, prompt: str, model: str, **kwargs) -> Dict[str, Any]:
+    def _prepare_headers(self) -> Dict[str, str]:
         """
-        准备Claude API请求
+        准备请求头（OpenAI 兼容格式）
         
-        Args:
-            prompt: 提示词
-            model: 模型名称
-            **kwargs: 其他参数
-            
-        Returns:
-            请求数据
-        """
-        default_model = model or self._get_default_model('claude')
-        return {
-            "model": default_model,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            "temperature": kwargs.get("temperature", self.temperature),
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        }
-    
-    def _prepare_headers(self, provider: LLMProvider) -> Dict[str, str]:
-        """
-        准备请求头
-        
-        Args:
-            provider: 大模型提供商
-            
         Returns:
             请求头字典
         """
-        api_key = self._get_api_key(provider)
-        
-        if provider == LLMProvider.OPENAI:
-            return {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-        elif provider == LLMProvider.CLAUDE:
-            return {
-                "x-api-key": api_key,
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01"
-            }
-        else:
-            return {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
+        api_key = self._get_api_key()
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
     
-    def _parse_openai_response(self, response_data: Dict[str, Any], model: str, 
-                              response_time: float) -> LLMResponse:
+    def _parse_response(self, response_data: Dict[str, Any], model: str, 
+                      response_time: float) -> LLMResponse:
         """
-        解析OpenAI API响应
+        解析 OpenAI 兼容 API 响应
         
         Args:
             response_data: 响应数据
@@ -237,49 +147,14 @@ class LLMService(ILLMService):
                 model=model,
                 tokens_used=0,
                 response_time=response_time,
-                error_message=f"解析OpenAI响应失败: {str(e)}"
+                error_message=f"解析API响应失败: {str(e)}"
             )
     
-    def _parse_claude_response(self, response_data: Dict[str, Any], model: str, 
-                              response_time: float) -> LLMResponse:
+    def _call_api_sync(self, prompt: str, model: str, **kwargs) -> LLMResponse:
         """
-        解析Claude API响应
+        同步调用 OpenAI 兼容 API
         
         Args:
-            response_data: 响应数据
-            model: 模型名称
-            response_time: 响应时间
-            
-        Returns:
-            LLM响应对象
-        """
-        try:
-            content = response_data["content"][0]["text"]
-            tokens_used = response_data.get("usage", {}).get("output_tokens", 0)
-            
-            return LLMResponse(
-                content=content,
-                model=model,
-                tokens_used=tokens_used,
-                response_time=response_time,
-                error_message=None
-            )
-        except (KeyError, IndexError) as e:
-            return LLMResponse(
-                content="",
-                model=model,
-                tokens_used=0,
-                response_time=response_time,
-                error_message=f"解析Claude响应失败: {str(e)}"
-            )
-    
-    def _call_api_sync(self, provider: LLMProvider, prompt: str, model: str, 
-                      **kwargs) -> LLMResponse:
-        """
-        同步调用API
-        
-        Args:
-            provider: 大模型提供商
             prompt: 提示词
             model: 模型名称
             **kwargs: 其他参数
@@ -291,27 +166,19 @@ class LLMService(ILLMService):
         
         try:
             # 准备请求数据
-            if provider == LLMProvider.OPENAI:
-                request_data = self._prepare_openai_request(prompt, model, **kwargs)
-            elif provider == LLMProvider.CLAUDE:
-                request_data = self._prepare_claude_request(prompt, model, **kwargs)
-            elif provider == LLMProvider.CUSTOM:
-                # 对于自定义提供商，使用OpenAI格式作为默认
-                request_data = self._prepare_openai_request(prompt, model, **kwargs)
-            else:
-                raise ValueError(f"不支持的提供商: {provider}")
+            request_data = self._prepare_request(prompt, model, **kwargs)
             
             # 准备请求头
-            headers = self._prepare_headers(provider)
+            headers = self._prepare_headers()
             
             # 检查API密钥
-            if not self._get_api_key(provider):
-                raise ValueError(f"{provider.value} API密钥未配置")
+            if not self._get_api_key():
+                raise ValueError("API密钥未配置")
             
-            # 从配置获取API端点
-            endpoint = self._get_api_endpoint(provider.value)
+            # 获取API端点
+            endpoint = self._get_api_endpoint()
             if not endpoint:
-                raise ValueError(f"未配置{provider.value}的API端点")
+                raise ValueError("未配置API端点")
             
             response = self.session.post(
                 endpoint,
@@ -334,7 +201,7 @@ class LLMService(ILLMService):
                 
                 return LLMResponse(
                     content="",
-                    model=model,
+                    model=model or self._get_default_model(),
                     tokens_used=0,
                     response_time=response_time,
                     error_message=error_msg
@@ -342,25 +209,13 @@ class LLMService(ILLMService):
             
             # 解析响应
             response_data = response.json()
-            
-            if provider == LLMProvider.OPENAI:
-                return self._parse_openai_response(response_data, model, response_time)
-            elif provider == LLMProvider.CLAUDE:
-                return self._parse_claude_response(response_data, model, response_time)
-            else:
-                return LLMResponse(
-                    content="",
-                    model=model,
-                    tokens_used=0,
-                    response_time=response_time,
-                    error_message=f"不支持的提供商: {provider}"
-                )
+            return self._parse_response(response_data, model or self._get_default_model(), response_time)
                 
         except requests.exceptions.Timeout:
             response_time = time.time() - start_time
             return LLMResponse(
                 content="",
-                model=model,
+                model=model or self._get_default_model(),
                 tokens_used=0,
                 response_time=response_time,
                 error_message=f"API调用超时 ({self.timeout}秒)"
@@ -369,62 +224,47 @@ class LLMService(ILLMService):
             response_time = time.time() - start_time
             return LLMResponse(
                 content="",
-                model=model,
+                model=model or self._get_default_model(),
                 tokens_used=0,
                 response_time=response_time,
                 error_message=f"网络请求失败: {str(e)}"
             )
         except Exception as e:
             response_time = time.time() - start_time
-            error_response = self.error_handler.handle_error(e, f"调用{provider.value} API")
+            error_response = self.error_handler.handle_error(e, "调用LLM API")
             return LLMResponse(
                 content="",
-                model=model,
+                model=model or self._get_default_model(),
                 tokens_used=0,
                 response_time=response_time,
                 error_message=error_response.message
             )
     
-    def call_api(self, prompt: str, model: str = None, provider: str = "openai", 
-                **kwargs) -> LLMResponse:
+    def call_api(self, prompt: str, model: str = None, **kwargs) -> LLMResponse:
         """
-        调用大模型API
+        调用大模型API（统一 OpenAI 兼容接口）
         
         Args:
             prompt: 提示词
             model: 模型名称（可选）
-            provider: 提供商名称
             **kwargs: 其他参数
             
         Returns:
             LLM响应对象
         """
-        try:
-            provider_enum = LLMProvider(provider.lower())
-        except ValueError:
-            return LLMResponse(
-                content="",
-                model=model or "unknown",
-                tokens_used=0,
-                response_time=0.0,
-                error_message=f"不支持的提供商: {provider}"
-            )
-        
         # 使用默认模型（如果未指定）
         if not model:
-            model = self._get_default_model(provider)
+            model = self._get_default_model()
         
-        return self._call_api_sync(provider_enum, prompt, model, **kwargs)
+        return self._call_api_sync(prompt, model, **kwargs)
     
-    def call_api_with_retry(self, prompt: str, model: str = None, provider: str = "openai", 
-                           **kwargs) -> LLMResponse:
+    def call_api_with_retry(self, prompt: str, model: str = None, **kwargs) -> LLMResponse:
         """
         带重试机制的API调用
         
         Args:
             prompt: 提示词
             model: 模型名称（可选）
-            provider: 提供商名称
             **kwargs: 其他参数
             
         Returns:
@@ -433,7 +273,7 @@ class LLMService(ILLMService):
         last_response = None
         
         for attempt in range(self.max_retries):
-            response = self.call_api(prompt, model, provider, **kwargs)
+            response = self.call_api(prompt, model, **kwargs)
             
             # 如果成功，直接返回
             if not response.error_message:
@@ -452,21 +292,19 @@ class LLMService(ILLMService):
         
         return last_response or LLMResponse(
             content="",
-            model=model or "unknown",
+            model=model or self._get_default_model(),
             tokens_used=0,
             response_time=0.0,
             error_message="API调用完全失败"
         )
     
-    def batch_call_api(self, prompts: List[str], model: str = None, provider: str = "openai", 
-                      **kwargs) -> List[LLMResponse]:
+    def batch_call_api(self, prompts: List[str], model: str = None, **kwargs) -> List[LLMResponse]:
         """
         批量调用API
         
         Args:
             prompts: 提示词列表
             model: 模型名称（可选）
-            provider: 提供商名称
             **kwargs: 其他参数
             
         Returns:
@@ -475,7 +313,7 @@ class LLMService(ILLMService):
         results = []
         
         for prompt in prompts:
-            response = self.call_api_with_retry(prompt, model, provider, **kwargs)
+            response = self.call_api_with_retry(prompt, model, **kwargs)
             results.append(response)
         
         return results
@@ -505,44 +343,39 @@ class LLMService(ILLMService):
             self.session.timeout = timeout
     
     def get_supported_providers(self) -> List[str]:
-        """获取支持的提供商列表"""
-        return [provider.value for provider in LLMProvider]
+        """获取支持的提供商列表（统一为 OpenAI 兼容）"""
+        return ["openai"]
     
-    def get_default_model(self, provider: str) -> str:
-        """
-        获取提供商的默认模型
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            默认模型名称
-        """
-        return self._get_default_model(provider)
+    def get_default_model(self) -> str:
+        """获取默认模型"""
+        return self._get_default_model()
     
-    def get_available_models(self, provider: str) -> List[str]:
-        """
-        获取提供商的可用模型列表
-        
-        Args:
-            provider: 提供商名称
-            
-        Returns:
-            模型列表
-        """
-        return self._get_available_models(provider)
+    def get_available_models(self) -> List[str]:
+        """获取可用模型列表"""
+        return self._get_available_models()
     
-    def get_provider_config(self, provider: str) -> Dict[str, Any]:
+    def get_current_config(self) -> Dict[str, Any]:
         """
-        获取提供商完整配置
+        获取当前配置
         
-        Args:
-            provider: 提供商名称
-            
         Returns:
-            提供商配置字典
+            当前配置字典
         """
-        return self._get_provider_config(provider)
+        return {
+            'api_endpoint': self.api_endpoint,
+            'model': self.model,
+            'timeout': self.timeout,
+            'temperature': self.temperature,
+            'max_tokens': self.max_tokens,
+            'max_retries': self.max_retries,
+            'retry_interval': self.retry_interval
+        }
+    
+    def get_presets(self) -> Dict[str, Any]:
+        """获取预设配置"""
+        if self.config_manager:
+            return self.config_manager.get_config('llm.presets', {})
+        return {}
     
     def validate_api_key(self, provider: str) -> bool:
         """

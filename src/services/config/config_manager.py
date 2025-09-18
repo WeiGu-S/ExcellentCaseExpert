@@ -31,48 +31,60 @@ class ConfigManager(IConfigManager):
                 'theme': 'light',
                 'language': 'zh_CN',
                 'remember_window_size': True,
-                'auto_save': True
+                'auto_save': True,
+                'font_size': 10,
+                'remember_window_state': True,
+                'show_splash': True,
+                'show_statusbar': True,
+                'show_toolbar': True,
+                'backup_config': True
             },
             'ocr': {
                 'service': 'paddleocr',  # paddleocr, tesseract
                 'confidence_threshold': 0.95,
                 'min_coverage': 0.90,
                 'auto_correct': True,
-                'language': 'ch'
+                'language': 'ch',
+                'tesseract_path': '',
+                'tesseract_lang': 'chi_sim+eng',
+                'tesseract_config': '--oem 3 --psm 6',
+                'enable_paddle': False,
+                'paddle_lang': 'ch',
+                'paddle_use_gpu': False,
+                'retry_count': 3,
+                'timeout': 30,
+                'enable_image_enhance': True
             },
             'llm': {
-                'default_service': 'custom',  # openai, claude, custom
-                'timeout': 5.0,
+                'api_endpoint': 'https://api.openai.com/v1/chat/completions',
+                'api_key': '',
+                'model': 'gpt-4o-mini',
+                'timeout': 60,
                 'max_retries': 3,
                 'retry_interval': 2.0,
                 'temperature': 0.7,
                 'max_tokens': 2000,
-                'providers': {
+                # 预设的常用提供商配置（仅包含端点，模型由用户输入）
+                'presets': {
                     'openai': {
-                        'api_endpoint': 'https://api.openai.com/v1/chat/completions',
-                        'default_model': 'gpt-3.5-turbo',
-                        'models': [
-                            'gpt-3.5-turbo',
-                            'gpt-3.5-turbo-16k',
-                            'gpt-4',
-                            'gpt-4-turbo-preview',
-                            'gpt-4o'
-                        ]
+                        'name': 'OpenAI',
+                        'api_endpoint': 'https://api.openai.com/v1/chat/completions'
                     },
-                    'claude': {
-                        'api_endpoint': 'https://api.anthropic.com/v1/messages',
-                        'default_model': 'claude-3-sonnet-20240229',
-                        'models': [
-                            'claude-3-haiku-20240307',
-                            'claude-3-sonnet-20240229',
-                            'claude-3-opus-20240229',
-                            'claude-3-5-sonnet-20241022'
-                        ]
+                    'deepseek': {
+                        'name': 'DeepSeek',
+                        'api_endpoint': 'https://api.deepseek.com/v1/chat/completions'
+                    },
+                    'zhipu': {
+                        'name': '智谱AI',
+                        'api_endpoint': 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+                    },
+                    'moonshot': {
+                        'name': 'Moonshot',
+                        'api_endpoint': 'https://api.moonshot.cn/v1/chat/completions'
                     },
                     'custom': {
-                        'api_endpoint': 'https://api.smnet.studio/v1',
-                        'default_model': 'deepseek-chat',
-                        'models': []
+                        'name': '自定义',
+                        'api_endpoint': ''
                     }
                 }
             },
@@ -87,7 +99,15 @@ class ConfigManager(IConfigManager):
                 'max_file_size_mb': 50,
                 'max_image_size_mb': 10,
                 'batch_size': 10,
-                'enable_cache': True
+                'enable_cache': True,
+                'max_workers': 4,
+                'memory_limit': 1024,
+                'cache_size': 100
+            },
+            'logging': {
+                'level': 'INFO',
+                'file_path': '',
+                'retention_days': 30
             }
         }
     
