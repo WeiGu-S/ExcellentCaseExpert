@@ -145,7 +145,7 @@ ehthumbs.db
 Thumbs.db
 
 # Application specific
-config/
+config
 logs/
 temp/
 *.key
